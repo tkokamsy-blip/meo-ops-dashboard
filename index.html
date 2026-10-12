@@ -867,17 +867,24 @@ function profileDraftAction(id, field, action) {
     load();
   }).catch(function () { toast("操作できませんでした"); });
 }
-function profileIntakeSave() {
+function profileIntakePayload() {
   function lines(id) { return document.getElementById(id).value.split(NL).map(function(x){return x.trim();}).filter(Boolean); }
-  var body={store_id:storeF(),business_type:document.getElementById("piBusiness").value,area:document.getElementById("piArea").value,
+  return {store_id:storeF(),business_type:document.getElementById("piBusiness").value,area:document.getElementById("piArea").value,
     target_customer:document.getElementById("piTarget").value,strengths:lines("piStrengths"),differentiators:document.getElementById("piDiff").value,
     keywords:lines("piKeywords"),ng_words:lines("piNg"),current_description:document.getElementById("piCurrent").value};
-  api("/api/profile/intake",{method:"POST",body:JSON.stringify(body)}).then(function(r){toast(r.ok?"元情報を保存しました":"保存できません: "+apiWhy(r));if(r.ok)load();});
+}
+function profileIntakeSave() {
+  api("/api/profile/intake",{method:"POST",body:JSON.stringify(profileIntakePayload())}).then(function(r){toast(r.ok?"元情報を保存しました":"保存できません: "+apiWhy(r));if(r.ok)load();});
 }
 function profileGenerate() {
-  if(!confirm("保存済みの店舗情報から提案を生成します。Googleの情報は変更されません。続行しますか？"))return;
-  toast("提案を生成中…");
-  api("/api/profile/generate",{method:"POST",body:JSON.stringify({store_id:storeF(),fields:["description","category","services"]})}).then(function(r){toast(r.ok?(r.generated?String(r.generated)+"件の提案を作成しました":"確認待ちの提案があるため、新しい生成は行いませんでした。下の提案一覧をご確認ください"):"生成できません: "+apiWhy(r));if(r.ok)load();}).catch(function(){toast("生成できませんでした");});
+  var body=profileIntakePayload();
+  if(!body.store_id || !body.business_type.trim() || !body.area.trim() || !body.strengths.length){toast("業態・商圏・強みを入力してください");return;}
+  if(!confirm("入力した元情報を保存して提案を生成します。Googleの情報は変更されません。続行しますか？"))return;
+  toast("元情報を保存して提案を生成中…");
+  api("/api/profile/intake",{method:"POST",body:JSON.stringify(body)}).then(function(saved){
+    if(!saved.ok){toast("元情報を保存できません: "+apiWhy(saved));return;}
+    return api("/api/profile/generate",{method:"POST",body:JSON.stringify({store_id:body.store_id,fields:["description","category","services"]})}).then(function(r){toast(r.ok?(r.generated?String(r.generated)+"件の提案を作成しました":"確認待ちの提案があります。下の提案一覧をご確認ください"):"生成できません: "+apiWhy(r));load();});
+  }).catch(function(){toast("通信に失敗しました。入力内容と接続をご確認ください");});
 }
 
 function rejectProfile(id) {
