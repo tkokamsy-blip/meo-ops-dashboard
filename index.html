@@ -728,8 +728,9 @@ function renderPosts() {
       (p.theme_hint ? '<div class="meta">ネタ: ' + esc(p.theme_hint) + "</div>" : "") +
       (p.planned_for ? '<div class="meta">予定枠: '+fmtDate(p.planned_for)+'</div>' : '') +
       (p.scheduled_at ? '<div class="meta">予約公開: '+fmtDate(p.scheduled_at)+'（日本時間）</div>' : '') +
-      ((p.status==='pending'||p.status==='revising')&&state.availability.operatorPublishing?'<div class="actions"><input id="schedule-'+p.id+'" type="datetime-local" value="'+japanInputValue(p.planned_for)+'" style="max-width:220px"><button class="primary" data-act="post_schedule" data-id="'+p.id+'">この日時で予約</button></div>':'') +
+      ((p.status==='pending'||p.status==='revising')&&state.availability.operatorPublishing?'<div class="actions"><input id="schedule-'+p.id+'" type="datetime-local" value="'+japanInputValue(p.planned_for)+'" style="max-width:220px"><button data-act="post_date_check" data-id="'+p.id+'">日付・文章を確認</button><button data-act="post_date_regen" data-id="'+p.id+'">この日付で再生成</button><button class="primary" data-act="post_schedule" data-id="'+p.id+'">この日時で予約</button></div>':'') +
       (['pending','revising'].includes(p.status)&&state.availability.operatorPublishing?'<div class="actions"><button class="danger" data-act="post_cancel" data-id="'+p.id+'">この投稿案を取り消す</button><span class="meta">公開せずに取り消し、履歴を残します。</span></div>':'') +
+      (['pending','revising'].includes(p.status)?'<div id="date-review-'+p.id+'" role="status" class="meta"></div>':'') +
       (p.status==='scheduled'?'<div class="actions"><button data-act="post_unschedule" data-id="'+p.id+'">予約を取り消す</button></div>':'') +
       (p.status==='error'?'<div class="actions"><button data-act="post_result_posted" data-id="'+p.id+'">Googleで公開済みを確認</button><button data-act="post_result_missing" data-id="'+p.id+'">未公開を確認・下書きへ戻す</button></div>':'') +
       (p.publish_error_code?'<div class="meta">公開処理: '+esc(p.publish_error_code)+'</div>':'') +
@@ -1717,11 +1718,32 @@ function createMonthPlan(){
   toast(r.ok?(r.existing?'作成済みの計画を確認しました':r.created+'本の下書きを作成しました'):'作成できませんでした: '+apiWhy(r));if(r.ok){state.postPlanRequestId=null;load();}
  }).catch(function(e){toast('作成できませんでした: '+e);});
 }
-function schedulePost(id){
- var post=state.posts.find(function(x){return x.id===id;}),input=document.getElementById('schedule-'+id);if(!post||!input||!input.value)return;
- var scheduledAt;try{scheduledAt=new Date(input.value+':00+09:00').toISOString();}catch(e){toast('予約日時を確認してください');return;}
- if(!confirm(fmtDate(scheduledAt)+'にGoogleへ自動公開する予約を確定します。内容を確認しましたか？'))return;
- api('/api/post/schedule',{method:'POST',body:JSON.stringify({suggestion_id:id,expected_text:post.summary,expected_photo_url:post.photo_url||null,scheduled_at:scheduledAt,confirm_schedule:true})}).then(function(r){toast(r.ok?'予約を確定しました':'予約できませんでした: '+apiWhy(r));if(r.ok)load();}).catch(function(){toast('予約できませんでした。内容と日時を再読み込みして確認してください。');});
+async function checkPostDate(id){
+ var post=state.posts.find(function(x){return x.id===id;}),input=document.getElementById('schedule-'+id);if(!post||!input||!input.value)return null;
+ var target;try{target=new Date(input.value+':00+09:00').toISOString();}catch(e){toast('予定日を確認してください');return null;}
+ var result=await api('/api/post/date-check',{method:'POST',body:JSON.stringify({suggestion_id:id,expected_text:post.summary,expected_photo_url:post.photo_url||null,planned_for:target})});
+ if(!result.ok){toast('確認できませんでした。最新の下書きを確認してください。');return null;}
+ var messages=result.review.warnings.length?result.review.warnings:['代表的な季節・日付の不一致は検出されませんでした。最終確認は担当者が行ってください。'];
+ document.getElementById('date-review-'+id).textContent='確認対象日：'+result.review.plannedDate+' ／ '+messages.join(' ');
+ return {post:post,target:target,review:result.review};
+}
+async function regenerateForDate(id){
+ try{var checked=await checkPostDate(id);if(!checked)return;
+ if(!confirm(checked.review.plannedDate+'に合わせて本文を再生成します。元の案は旧版として残り、公開・予約は行いません。よろしいですか？'))return;
+ toast('変更後の日付に合わせて再生成しています…');
+ var r=await api('/api/post/regenerate',{method:'POST',body:JSON.stringify({suggestion_id:id,planned_for:checked.target,instruction:'公開予定日に合わせて季節と日付表現を再確認し、不一致を修正してください。未確認の天候・イベント・営業日を作らず、必要なら中立表現を使用してください。'})});
+ toast(r.ok?'予定日に合わせて再生成しました。新しい本文を確認してください。':'再生成できませんでした: '+apiWhy(r));if(r.ok)load();
+ }catch(e){toast('再生成できませんでした。最新の状態をご確認ください。');}
+}
+async function schedulePost(id){
+ try{var checked=await checkPostDate(id);if(!checked)return;
+ if(!checked.review.seasonOk){toast('季節の表現を修正するか、この日付で再生成してください。');return;}
+ var note=checked.review.warnings.join(String.fromCharCode(10));
+ if(!confirm(fmtDate(checked.target)+'に予約します。本文・写真・日付表現を確認しましたか？'+String.fromCharCode(10,10)+note))return;
+ var post=checked.post;
+ var r=await api('/api/post/schedule',{method:'POST',body:JSON.stringify({suggestion_id:id,expected_text:post.summary,expected_photo_url:post.photo_url||null,scheduled_at:checked.target,confirm_schedule:true,confirm_date_review:true,reviewed_date:checked.review.plannedDate})});
+ toast(r.ok?'予約を確定しました':'予約できませんでした: '+apiWhy(r));if(r.ok)load();
+ }catch(e){toast('確認・予約できませんでした。最新の状態をご確認ください。');}
 }
 function unschedulePost(id){
  if(!confirm('この投稿予約を取り消しますか？下書きは残ります。'))return;
@@ -1824,7 +1846,9 @@ document.getElementById("main").addEventListener("click", function (e) {
   if (!b) return;
   var act = b.getAttribute("data-act");
   var id = b.getAttribute("data-id");
-  if(act==="post_cancel")cancelPostDraft(id);
+  if(act==="post_date_check")checkPostDate(id).catch(function(){toast("日付を確認できませんでした");});
+  else if(act==="post_date_regen")regenerateForDate(id);
+  else if(act==="post_cancel")cancelPostDraft(id);
   else if (["photo_url","photo_upload","photo_remove"].includes(act))savePostPhoto(id,act);
   else if (act === "save") saveDraft(id);
   else if (act === "approve") approve(id);
