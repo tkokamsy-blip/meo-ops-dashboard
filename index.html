@@ -601,6 +601,7 @@ function renderInbox() {
       body +
       '<textarea class="draft" id="txt-' + it.id + '" data-id="' + it.id + '">' +
       esc(it.text) + "</textarea>" +
+      (it.type==="post"?postPhotoControls(it):"") +
       '<div class="actions">' +
       '<button data-act="save" data-id="' + it.id + '">下書き保存</button>' +
       '<button class="primary" data-act="approve" data-id="' + it.id + '">' +
@@ -722,7 +723,7 @@ function renderPosts() {
       '<span class="store">' + esc((p.meo_stores || {}).name || storeName(p.store_id)) +
       (p.version > 1 ? " v" + p.version : "") + "</span>" +
       '<span class="meta right">' + fmtDate(p.posted_at || p.created_at) + "</span></div>" +
-      '<div class="review">' + esc(p.summary) + "</div>" +
+      '<div class="review">' + esc(p.summary) + "</div>" + postPhotoControls(p) +
       (p.theme_hint ? '<div class="meta">ネタ: ' + esc(p.theme_hint) + "</div>" : "") +
       (p.planned_for ? '<div class="meta">予定枠: '+fmtDate(p.planned_for)+'</div>' : '') +
       (p.scheduled_at ? '<div class="meta">予約公開: '+fmtDate(p.scheduled_at)+'（日本時間）</div>' : '') +
@@ -1585,9 +1586,39 @@ function updateBulkbar() {
   var c = document.getElementById("bulkCount");
   if (c) c.textContent = n + "件選択中";
 }
+
+function postPhotoControls(row){
+ var url=row.photo_url||'',id=row.id,editable=['pending','revising'].includes(row.status);
+ var out='<section class="post-photo"><strong>投稿写真（1枚）</strong>';
+ if(url)out+='<p><img src="'+esc(url)+'" alt="投稿写真プレビュー" referrerpolicy="no-referrer" style="max-width:100%;max-height:240px;border-radius:8px"></p>';
+ if(editable)out+='<p class="meta">投稿に使う写真だけを選択してください。アップロード後は公開URLで保存されます。顔・個人情報・著作権にご注意ください。保存だけではGoogleへ公開されません。</p><input id="photo-url-'+id+'" type="url" placeholder="https://example.com/photo.jpg" value="'+esc(url)+'"><button data-act="photo_url" data-id="'+id+'">画像URLを保存</button><p><input id="photo-file-'+id+'" type="file" accept="image/jpeg,image/png"><button data-act="photo_upload" data-id="'+id+'">写真をアップロード</button><button data-act="photo_remove" data-id="'+id+'">写真を外す</button></p><p class="meta">JPEG / PNG、5MB以内、短辺250px以上。写真の差し替えは予約を解除してから行ってください。</p>';
+ return out+'</section>';
+}
+function postPhotoRow(id){return state.posts.find(function(p){return p.id===id;})||findItem(id);}
+async function savePostPhoto(id,action){
+ var row=postPhotoRow(id);if(!row)return;
+ var text=document.getElementById('txt-'+id);
+ if(text&&text.value!==findItem(id).text){toast('先に本文の下書きを保存してください。');return;}
+ var body={suggestion_id:id,expected_photo_url:row.photo_url||null,action:'url',photo_url:null};
+ try{
+  if(action==='photo_url')body.photo_url=document.getElementById('photo-url-'+id).value.trim()||null;
+  if(action==='photo_upload'){
+   var f=document.getElementById('photo-file-'+id).files[0];
+   if(!f||!['image/jpeg','image/png'].includes(f.type)||f.size>5*1024*1024){toast('5MB以内のJPEGまたはPNGを選択してください。');return;}
+   if(!confirm('この写真を公開URLで保存します。投稿に使用してよい写真ですか？'))return;
+   var image=await createImageBitmap(f);
+   if(Math.min(image.width,image.height)<250){image.close();toast('短辺250px以上の写真を選択してください。');return;}
+   var ratio=Math.min(1,2048/Math.max(image.width,image.height)),canvas=document.createElement('canvas');canvas.width=Math.round(image.width*ratio);canvas.height=Math.round(image.height*ratio);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);image.close();
+   body.action='upload';body.mime='image/jpeg';body.base64=canvas.toDataURL('image/jpeg',0.92).split(',')[1];body.confirm_public_photo=true;
+  }
+  var result=await api('/api/post/photo',{method:'POST',body:JSON.stringify(body)});
+  toast(result.ok?'写真を保存しました（Google未公開）':'写真を保存できませんでした: '+apiWhy(result));if(result.ok)load();
+ }catch(e){toast('写真を保存できませんでした。形式・サイズ・接続状況をご確認ください。');}
+}
+
 function saveDraft(id) {
   var it=findItem(id);if(!it)return;
-  var body={text:document.getElementById("txt-"+id).value,expected_text:it.text};
+  var body={text:document.getElementById("txt-"+id).value,expected_text:it.text,expected_photo_url:it.photo_url||null};
   body[it.type==="post"?"suggestion_id":"draft_id"]=id;
   api("/api/"+it.type+"/save",{method:"POST",body:JSON.stringify(body)}).then(function(r){toast(r.ok?"下書きを保存しました（未公開）":"保存できませんでした");load();}).catch(function(){toast("保存できませんでした。再読み込みして確認してください。");});
 }
@@ -1596,8 +1627,8 @@ function approve(id) {
   var txt = document.getElementById("txt-" + id).value;
   if(state.availability.operatorPublishing){
     if(txt!==it.text){toast("先に下書きを保存してください。");return;}
-    if(!confirm(it.store_name+" のGoogleに次の内容を公開します。よろしいですか？"+String.fromCharCode(10,10)+txt))return;
-    var publication={expected_text:it.text,confirm_publish:true};publication[it.type==="post"?"suggestion_id":"draft_id"]=id;
+    if(!confirm(it.store_name+" のGoogleに次の内容を公開します。よろしいですか？"+String.fromCharCode(10,10)+txt+(it.photo_url?String.fromCharCode(10,10)+"保存済みの写真1枚も公開します。":"")))return;
+    var publication={expected_text:it.text,expected_photo_url:it.photo_url||null,confirm_publish:true};publication[it.type==="post"?"suggestion_id":"draft_id"]=id;
     api("/api/"+it.type+"/publish",{method:"POST",body:JSON.stringify(publication)}).then(function(r){toast(r.ok?"Googleへ公開しました":"公開結果を確認してください");load();}).catch(function(){toast("公開結果を確認できません。再送せずGoogle管理画面と履歴を確認してください。");load();});return;
   }
   var body = it.type === "post"
@@ -1681,7 +1712,7 @@ function schedulePost(id){
  var post=state.posts.find(function(x){return x.id===id;}),input=document.getElementById('schedule-'+id);if(!post||!input||!input.value)return;
  var scheduledAt;try{scheduledAt=new Date(input.value+':00+09:00').toISOString();}catch(e){toast('予約日時を確認してください');return;}
  if(!confirm(fmtDate(scheduledAt)+'にGoogleへ自動公開する予約を確定します。内容を確認しましたか？'))return;
- api('/api/post/schedule',{method:'POST',body:JSON.stringify({suggestion_id:id,expected_text:post.summary,scheduled_at:scheduledAt,confirm_schedule:true})}).then(function(r){toast(r.ok?'予約を確定しました':'予約できませんでした: '+apiWhy(r));if(r.ok)load();}).catch(function(){toast('予約できませんでした。内容と日時を再読み込みして確認してください。');});
+ api('/api/post/schedule',{method:'POST',body:JSON.stringify({suggestion_id:id,expected_text:post.summary,expected_photo_url:post.photo_url||null,scheduled_at:scheduledAt,confirm_schedule:true})}).then(function(r){toast(r.ok?'予約を確定しました':'予約できませんでした: '+apiWhy(r));if(r.ok)load();}).catch(function(){toast('予約できませんでした。内容と日時を再読み込みして確認してください。');});
 }
 function unschedulePost(id){
  if(!confirm('この投稿予約を取り消しますか？下書きは残ります。'))return;
@@ -1784,7 +1815,8 @@ document.getElementById("main").addEventListener("click", function (e) {
   if (!b) return;
   var act = b.getAttribute("data-act");
   var id = b.getAttribute("data-id");
-  if (act === "save") saveDraft(id);
+  if (["photo_url","photo_upload","photo_remove"].includes(act))savePostPhoto(id,act);
+  else if (act === "save") saveDraft(id);
   else if (act === "approve") approve(id);
   else if (act === "regen") regen(id);
   else if (act === "reject") reject(id);
