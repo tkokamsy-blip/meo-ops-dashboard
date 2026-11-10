@@ -711,7 +711,7 @@ function renderPosts() {
     '<p class="meta">下書き作成だけでは公開されません。'+(state.availability.scheduledPublishing?'予約公開ジョブは有効です。':'予約枠は作成できますが、自動公開ジョブは現在停止中です。')+'</p></div>';
 
   var stMap = { pending: ["", "確認待ち"], revising: ["", "修正中"], scheduled: ["post", "予約済み"], publishing:["", "公開処理中"],
-                approved: ["", "公開結果確認中"], posted: ["post", "投稿済み"], error:["nh","要確認"], rejected: ["gray", "却下"], superseded: ["gray", "旧版"] };
+                approved: ["", "公開結果確認中"], posted: ["post", "投稿済み"], error:["nh","要確認"], rejected: ["gray", "取り消し済み"], superseded: ["gray", "旧版"] };
   var shown = 0;
   state.posts.forEach(function (p) {
     if (sid && p.store_id !== sid) return;
@@ -728,6 +728,7 @@ function renderPosts() {
       (p.planned_for ? '<div class="meta">予定枠: '+fmtDate(p.planned_for)+'</div>' : '') +
       (p.scheduled_at ? '<div class="meta">予約公開: '+fmtDate(p.scheduled_at)+'（日本時間）</div>' : '') +
       ((p.status==='pending'||p.status==='revising')&&state.availability.operatorPublishing?'<div class="actions"><input id="schedule-'+p.id+'" type="datetime-local" value="'+japanInputValue(p.planned_for)+'" style="max-width:220px"><button class="primary" data-act="post_schedule" data-id="'+p.id+'">この日時で予約</button></div>':'') +
+      (['pending','revising'].includes(p.status)&&state.availability.operatorPublishing?'<div class="actions"><button class="danger" data-act="post_cancel" data-id="'+p.id+'">この投稿案を取り消す</button><span class="meta">公開せずに取り消し、履歴を残します。</span></div>':'') +
       (p.status==='scheduled'?'<div class="actions"><button data-act="post_unschedule" data-id="'+p.id+'">予約を取り消す</button></div>':'') +
       (p.status==='error'?'<div class="actions"><button data-act="post_result_posted" data-id="'+p.id+'">Googleで公開済みを確認</button><button data-act="post_result_missing" data-id="'+p.id+'">未公開を確認・下書きへ戻す</button></div>':'') +
       (p.publish_error_code?'<div class="meta">公開処理: '+esc(p.publish_error_code)+'</div>':'') +
@@ -1587,6 +1588,13 @@ function updateBulkbar() {
   if (c) c.textContent = n + "件選択中";
 }
 
+async function cancelPostDraft(id){
+ var post=state.posts.find(function(p){return p.id===id;});
+ if(!post||!['pending','revising'].includes(post.status)){toast('取り消せる下書きがありません。最新の状態を確認してください。');return;}
+ if(!confirm(storeName(post.store_id)+' の投稿案を取り消します。Googleへは公開せず、履歴は残します。よろしいですか？'+String.fromCharCode(10,10)+post.summary))return;
+ try{var r=await api('/api/post/reject',{method:'POST',body:JSON.stringify({suggestion_id:id})});toast(r.ok?'投稿案を取り消しました（未公開・履歴は保存）':'取り消せませんでした。最新の状態を確認してください。');load();}catch(e){toast('取り消し結果を確認できません。更新して状態をご確認ください。');}
+}
+
 function postPhotoControls(row){
  var url=row.photo_url||'',id=row.id,editable=['pending','revising'].includes(row.status);
  var out='<section class="post-photo"><strong>投稿写真（1枚）</strong>';
@@ -1815,7 +1823,8 @@ document.getElementById("main").addEventListener("click", function (e) {
   if (!b) return;
   var act = b.getAttribute("data-act");
   var id = b.getAttribute("data-id");
-  if (["photo_url","photo_upload","photo_remove"].includes(act))savePostPhoto(id,act);
+  if(act==="post_cancel")cancelPostDraft(id);
+  else if (["photo_url","photo_upload","photo_remove"].includes(act))savePostPhoto(id,act);
   else if (act === "save") saveDraft(id);
   else if (act === "approve") approve(id);
   else if (act === "regen") regen(id);
