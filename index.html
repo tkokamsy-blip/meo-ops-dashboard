@@ -711,12 +711,15 @@ function renderPosts() {
     '<div class="actions"><button class="primary" data-act="month_plan">下書きをまとめて作成</button></div>' +
     '<p class="meta">下書き作成だけでは公開されません。'+(state.availability.scheduledPublishing?'予約公開ジョブは有効です。':'予約枠は作成できますが、自動公開ジョブは現在停止中です。')+'</p></div>';
 
+  if(state.postHistory)html='';
+  html+='<div class="bar"><button data-act="post_current" aria-pressed="'+(!state.postHistory)+'">通常の投稿</button><button data-act="post_history" aria-pressed="'+!!state.postHistory+'">取り消し履歴</button></div>';
+  if(state.postHistory)html+='<p class="meta">取り消した投稿案の履歴です。Googleへの公開・予約はできません。</p>';
   var stMap = { pending: ["", "確認待ち"], revising: ["", "修正中"], scheduled: ["post", "予約済み"], publishing:["", "公開処理中"],
                 approved: ["", "公開結果確認中"], posted: ["post", "投稿済み"], error:["nh","要確認"], rejected: ["gray", "取り消し済み"], superseded: ["gray", "旧版"] };
   var shown = 0;
-  state.posts.forEach(function (p) {
+  (state.postHistory?(state.postCancelledItems||[]):state.posts).forEach(function (p) {
     if (sid && p.store_id !== sid) return;
-    if (p.status === "superseded") return;
+    if (p.status === "superseded" || (state.postHistory ? p.status!=="rejected" : p.status==="rejected")) return;
     shown++;
     var st = stMap[p.status] || ["gray", p.status];
     html += '<div class="card">' +
@@ -736,7 +739,8 @@ function renderPosts() {
       (p.publish_error_code?'<div class="meta">公開処理: '+esc(p.publish_error_code)+'</div>':'') +
       "</div>";
   });
-  if (shown === 0) html += '<div class="empty">投稿はまだありません</div>';
+  if (shown === 0) html += '<div class="empty">'+(state.postHistory?'取り消し履歴はありません':'表示する投稿はありません')+'</div>';
+  if(state.postHistory)html+='<div class="actions">'+(state.postHistoryOffset?'<button data-act="post_history_previous">前の100件</button>':'')+((state.postCancelledItems||[]).length===100?'<button data-act="post_history_next">次の100件</button>':'')+'</div>';
   return html;
 }
 
@@ -1590,6 +1594,10 @@ function updateBulkbar() {
   if (c) c.textContent = n + "件選択中";
 }
 
+async function loadCancelledPosts(offset){
+ try{var rows=await api('/api/posts?history=cancelled&offset='+Math.max(0,offset||0));if(!Array.isArray(rows))throw Error('history unavailable');state.postCancelledItems=rows;state.postHistoryOffset=Math.max(0,offset||0);state.postHistory=true;render();}catch(e){toast('取り消し履歴を取得できませんでした。再度お試しください。');}
+}
+
 async function cancelPostDraft(id){
  var post=state.posts.find(function(p){return p.id===id;});
  if(!post||!['pending','revising'].includes(post.status)){toast('取り消せる下書きがありません。最新の状態を確認してください。');return;}
@@ -1846,7 +1854,11 @@ document.getElementById("main").addEventListener("click", function (e) {
   if (!b) return;
   var act = b.getAttribute("data-act");
   var id = b.getAttribute("data-id");
-  if(act==="post_date_check")checkPostDate(id).catch(function(){toast("日付を確認できませんでした");});
+  if(act==="post_current"){state.postHistory=false;render();}
+  else if(act==="post_history")loadCancelledPosts(0);
+  else if(act==="post_history_next")loadCancelledPosts((state.postHistoryOffset||0)+100);
+  else if(act==="post_history_previous")loadCancelledPosts((state.postHistoryOffset||0)-100);
+  else if(act==="post_date_check")checkPostDate(id).catch(function(){toast("日付を確認できませんでした");});
   else if(act==="post_date_regen")regenerateForDate(id);
   else if(act==="post_cancel")cancelPostDraft(id);
   else if (["photo_url","photo_upload","photo_remove"].includes(act))savePostPhoto(id,act);
