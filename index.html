@@ -696,6 +696,7 @@ function renderPosts() {
     html += '<option value="' + s.id + '">' + esc(s.name) + "</option>";
   });
   html += "</select></div>" +
+    '<div class="bar"><label>公開予定日（任意）<input id="netaDay" type="date"></label><span class="meta">未指定なら本日を基準に生成します。日付指定だけでは予約されません。</span></div>' +
     '<textarea id="netaText" placeholder="例: 新作レモンサワー始めました。柑橘は瀬戸内産。"></textarea>' +
     '<div class="actions"><button class="primary" data-act="neta">投稿案を生成</button></div></div>';
 
@@ -1697,7 +1698,7 @@ function createNeta() {
   var theme = document.getElementById("netaText").value.trim();
   if (!storeId || !theme) { toast("店舗とネタ内容を入力してください"); return; }
   toast("生成中…");
-  api("/api/post/create", { method: "POST", body: JSON.stringify({ store_id: storeId, theme: theme }) })
+  api("/api/post/create", { method: "POST", body: JSON.stringify({ store_id: storeId, theme: theme, planned_for:document.getElementById("netaDay").value||null }) })
     .then(function (r) {
       if (r.ok) { toast("投稿案を作成しました(受信箱へ)"); load(); }
       else toast("作成できませんでした: " + apiWhy(r));
