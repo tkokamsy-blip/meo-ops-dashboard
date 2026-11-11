@@ -1538,11 +1538,12 @@ function manualCopy(kind, id) {
 }
 
 function manualDone(kind, id) {
+  if(!confirm("Google側で公開・反映済みであることを確認しましたか？この操作は履歴の記録だけで、Googleへ投稿・変更は行いません。"))return;
   var path = kind === "posts" ? "/api/post/posted"
     : kind === "profiles" ? "/api/profile/applied" : "/api/reply/posted";
-  var body = kind === "posts" ? { suggestion_id: id } : { draft_id: id };
+  var body = kind === "posts" ? { suggestion_id: id,confirm_manual_applied:true } : { draft_id: id,confirm_manual_applied:true };
   api(path, { method: "POST", body: JSON.stringify(body) }).then(function (r) {
-    toast(r.ok ? "✅ 消し込みました" : "消し込めませんでした: " + apiWhy(r));
+    toast(r.ok ? "公開済みとして記録しました" : "消し込めませんでした: " + apiWhy(r));
     load();
   }).catch(function (e) { toast("エラー: " + e); });
 }
