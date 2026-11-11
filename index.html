@@ -714,6 +714,7 @@ function renderPosts() {
   if(state.postHistory)html='';
   html+='<div class="bar"><button data-act="post_current" aria-pressed="'+(!state.postHistory)+'">通常の投稿</button><button data-act="post_history" aria-pressed="'+!!state.postHistory+'">取り消し履歴</button></div>';
   if(state.postHistory)html+='<p class="meta">取り消した投稿案の履歴です。Googleへの公開・予約はできません。</p>';
+  if(!state.postHistory)html=renderPhotoLibrary()+html;
   var stMap = { pending: ["", "確認待ち"], revising: ["", "修正中"], scheduled: ["post", "予約済み"], publishing:["", "公開処理中"],
                 approved: ["", "公開結果確認中"], posted: ["post", "投稿済み"], error:["nh","要確認"], rejected: ["gray", "取り消し済み"], superseded: ["gray", "旧版"] };
   var shown = 0;
@@ -1606,9 +1607,39 @@ async function cancelPostDraft(id){
  try{var r=await api('/api/post/reject',{method:'POST',body:JSON.stringify({suggestion_id:id})});toast(r.ok?'投稿案を取り消しました（未公開・履歴は保存）':'取り消せませんでした。最新の状態を確認してください。');load();}catch(e){toast('取り消し結果を確認できません。更新して状態をご確認ください。');}
 }
 
+function renderPhotoLibrary(){
+ var s=state.photoLibraryStore||'',html='<div class="card"><strong>店舗別写真フォルダ</strong><p class="meta">店舗を選び、写真・分類・説明を登録します。提案は登録情報との一致をもとに行い、写真の内容を自動で断定しません。</p><div class="actions">';
+ state.stores.forEach(function(x){html+='<button data-act="library_open" data-id="'+x.id+'">'+esc(x.name)+'</button>';});html+='</div>';
+ if(!s)return html+'</div>';
+ html+='<h3>'+esc(storeName(s))+' の写真フォルダ</h3><input id="libraryTitle" placeholder="写真名（例：入口の看板）" maxlength="120"><select id="libraryCategory"><option value="exterior">外観</option><option value="interior">店内</option><option value="seating">席・カウンター</option><option value="entrance">入口・アクセス</option><option value="atmosphere">雰囲気</option><option value="other">その他</option></select><select id="librarySeason"><option value="ALL">通年</option><option value="SPRING">春</option><option value="SUMMER">夏</option><option value="AUTUMN">秋</option><option value="WINTER">冬</option></select><input id="libraryTags" maxlength="300" placeholder="説明キーワード（例：夜, 音楽, 看板）"><p><input id="libraryFile" type="file" accept="image/jpeg,image/png"><input id="libraryUrl" type="url" placeholder="または公開HTTPS画像URL"></p><p class="meta">登録写真は公開URLで保存されます。投稿に使ってよい写真だけを選んでください。JPEG/PNG・5MB以内。登録だけではGoogleへ公開されません。</p><button data-act="library_add">この店舗の写真フォルダに登録</button>';
+ (state.photoLibraryItems||[]).forEach(function(p){html+='<section><img src="'+esc(p.photo_url)+'" alt="'+esc(p.title)+'" referrerpolicy="no-referrer" style="max-width:180px;max-height:130px"><strong>'+esc(p.title)+'</strong><p class="meta">'+esc(p.tags)+'</p></section>';});
+ return html+'</div>';
+}
+async function openPhotoLibrary(id){try{var r=await api('/api/photo-library/list',{method:'POST',body:JSON.stringify({store_id:id})});if(!r.ok)throw Error();state.photoLibraryStore=id;state.photoLibraryItems=r.photos;render();}catch(e){toast('写真フォルダを取得できませんでした');}}
+async function addLibraryPhoto(){
+ try{var body={store_id:state.photoLibraryStore,title:document.getElementById('libraryTitle').value.trim(),category:document.getElementById('libraryCategory').value,season:document.getElementById('librarySeason').value,tags:document.getElementById('libraryTags').value.trim(),photo_url:document.getElementById('libraryUrl').value.trim(),confirm_public_photo:true};
+ if(!body.title){toast('写真名を入力してください');return;}
+ var file=document.getElementById('libraryFile').files[0];if(file&&body.photo_url){toast('写真ファイルか画像URLのどちらか一方を指定してください');return;}
+ if(!confirm(storeName(body.store_id)+' の公開写真フォルダへ登録します。店舗・写真・公開してよい内容を確認しましたか？'))return;
+ if(file){if(!['image/jpeg','image/png'].includes(file.type)||file.size>5242880)throw Error();var image=await createImageBitmap(file);if(Math.min(image.width,image.height)<250){image.close();throw Error();}var ratio=Math.min(1,2048/Math.max(image.width,image.height)),canvas=document.createElement('canvas');canvas.width=Math.round(image.width*ratio);canvas.height=Math.round(image.height*ratio);canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);image.close();body.base64=canvas.toDataURL('image/jpeg',0.92).split(',')[1];body.mime='image/jpeg';}
+ var r=await api('/api/photo-library/add',{method:'POST',body:JSON.stringify(body)});if(!r.ok){toast('写真を登録できませんでした: '+apiWhy(r));return;}toast('写真を登録しました（Google未公開）');openPhotoLibrary(body.store_id);
+ }catch(e){toast('JPEG/PNG・サイズ・接続状況を確認してください');}
+}
+async function recommendPostPhotos(id){
+ var post=postPhotoRow(id);if(!post)return;
+ var editor=document.getElementById('txt-'+id);if(editor&&editor.value!==(post.summary||post.text)){toast('先に本文の下書きを保存してください');return;}
+ try{var r=await api('/api/photo-library/recommend',{method:'POST',body:JSON.stringify({suggestion_id:id,expected_text:post.summary||post.text})});if(!r.ok){toast('写真候補を取得できませんでした');return;}
+ var html='<p class="meta">分類・キーワード・季節・最近の使用状況から提案します。選ぶまでは添付されません。</p>';
+ if(!r.candidates.length)html+='<p>合う写真候補がありません。店舗別写真フォルダへ写真と説明キーワードを登録してください。</p>';
+ r.candidates.forEach(function(p){html+='<section><img src="'+esc(p.photo_url)+'" alt="'+esc(p.title)+'" referrerpolicy="no-referrer" style="max-width:180px;max-height:130px"><strong>'+esc(p.title)+'</strong><p>'+esc(p.reason)+'</p><button data-act="library_select" data-id="'+id+'" data-photo="'+p.id+'">この写真を選ぶ</button></section>';});document.getElementById('photo-candidates-'+id).innerHTML=html;
+ }catch(e){toast('写真候補を取得できませんでした');}
+}
+async function selectLibraryPhoto(id,photo){var post=postPhotoRow(id);if(!post||!confirm('この写真を下書きに添付します。本文・写真は公開前に再確認してください。'))return;try{var r=await api('/api/photo-library/select',{method:'POST',body:JSON.stringify({suggestion_id:id,photo_id:photo,expected_text:post.summary||post.text,expected_photo_url:post.photo_url||null})});toast(r.ok?'写真を選択しました（Google未公開）':'写真を選択できませんでした');if(r.ok)load();}catch(e){toast('写真を選択できませんでした');}}
+
 function postPhotoControls(row){
  var url=row.photo_url||'',id=row.id,editable=['pending','revising'].includes(row.status);
  var out='<section class="post-photo"><strong>投稿写真（1枚）</strong>';
+ if(editable)out+='<button data-act="library_recommend" data-id="'+id+'">本文に合う写真を提案</button><div id="photo-candidates-'+id+'" role="status"></div>';
  if(url)out+='<p><img src="'+esc(url)+'" alt="投稿写真プレビュー" referrerpolicy="no-referrer" style="max-width:100%;max-height:240px;border-radius:8px"></p>';
  if(editable)out+='<p class="meta">投稿に使う写真だけを選択してください。アップロード後は公開URLで保存されます。顔・個人情報・著作権にご注意ください。保存だけではGoogleへ公開されません。</p><input id="photo-url-'+id+'" type="url" placeholder="https://example.com/photo.jpg" value="'+esc(url)+'"><button data-act="photo_url" data-id="'+id+'">画像URLを保存</button><p><input id="photo-file-'+id+'" type="file" accept="image/jpeg,image/png"><button data-act="photo_upload" data-id="'+id+'">写真をアップロード</button><button data-act="photo_remove" data-id="'+id+'">写真を外す</button></p><p class="meta">JPEG / PNG、5MB以内、短辺250px以上。写真の差し替えは予約を解除してから行ってください。</p>';
  return out+'</section>';
@@ -1855,7 +1886,11 @@ document.getElementById("main").addEventListener("click", function (e) {
   if (!b) return;
   var act = b.getAttribute("data-act");
   var id = b.getAttribute("data-id");
-  if(act==="post_current"){state.postHistory=false;render();}
+  if(act==="library_open")openPhotoLibrary(id);
+  else if(act==="library_add")addLibraryPhoto();
+  else if(act==="library_recommend")recommendPostPhotos(id);
+  else if(act==="library_select")selectLibraryPhoto(id,e.target.getAttribute('data-photo'));
+  else if(act==="post_current"){state.postHistory=false;render();}
   else if(act==="post_history")loadCancelledPosts(0);
   else if(act==="post_history_next")loadCancelledPosts((state.postHistoryOffset||0)+100);
   else if(act==="post_history_previous")loadCancelledPosts((state.postHistoryOffset||0)-100);
