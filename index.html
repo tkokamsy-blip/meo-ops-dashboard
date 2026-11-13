@@ -982,6 +982,7 @@ function renderClients() {
       "</div>" +
       '<div class="bar">' +
       '<input id="psLead" type="text" placeholder="リード文(標準: 30秒のアンケートにご協力ください。…)" style="max-width:400px">' +
+      '<label>上部の挨拶文（POP・アンケート共通／60字まで）<input id="psGreeting" type="text" maxlength="60" placeholder="THANK YOU FOR VISITING"></label>' +
       '<input id="psFooter" type="text" placeholder="POP最下部の一行(空欄なら何も出しません)" style="max-width:250px">' +
       "</div>" +
       '<div class="actions"><button class="primary" data-act="ps_save">デザインを保存</button>' +
@@ -1173,6 +1174,7 @@ function popPrefill() {
   document.getElementById("psTitle").value = c.title || "";
   document.getElementById("psLead").value = c.lead || "";
   document.getElementById("psSteps").value = c.steps || "";
+  document.getElementById("psGreeting").value = c.greeting || "";
   document.getElementById("psFooter").value = c.footer || "";
   document.getElementById("psAccent").value = c.accent || "#d4502e";
   document.getElementById("psBg").value = c.bg || "#f6f3ec";
@@ -1186,6 +1188,7 @@ function popSave() {
     title: document.getElementById("psTitle").value.trim(),
     lead: document.getElementById("psLead").value.trim(),
     steps: document.getElementById("psSteps").value.trim(),
+    greeting: document.getElementById("psGreeting").value.trim(),
     footer: document.getElementById("psFooter").value.trim(),
     accent: document.getElementById("psAccent").value,
     bg: document.getElementById("psBg").value,
