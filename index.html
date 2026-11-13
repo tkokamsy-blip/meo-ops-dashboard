@@ -1035,6 +1035,8 @@ function renderClients() {
           "<b>" + esc(s.name) + "</b>";
         if (full && full.public_key) {
           html += '<button data-act="st_qr" data-id="' + s.id + '">🖨 QRとPOPを発行</button>' +
+            '<button data-act="st_qr_png" data-id="' + s.id + '">QRのみ PNG</button>' +
+            '<button data-act="st_qr_svg" data-id="' + s.id + '">QRのみ SVG</button>' +
             '<span class="meta">giveandco.jp/v/?k=' + esc(full.public_key) + "</span>";
         } else {
           html += '<span class="badge gray">QR未設定</span>';
@@ -1113,6 +1115,29 @@ function storeOnboard() {
 }
 
 // QRとPOP発行: ポップアップブロック回避のため、クリック直後に空ウィンドウを開いてから中身を流し込む
+async function downloadStoreQr(id, format) {
+  try {
+    var r = await api("/api/store/qr?store_id=" + encodeURIComponent(id));
+    if (!r.ok || !r.svg) { toast("QRを取得できませんでした: " + apiWhy(r)); return; }
+    var svgBlob = new Blob([r.svg], {type:"image/svg+xml;charset=utf-8"});
+    var blob = svgBlob;
+    if (format === "png") {
+      var src = URL.createObjectURL(svgBlob);
+      try {
+        var img = new Image();
+        await new Promise(function(resolve,reject){img.onload=resolve;img.onerror=reject;img.src=src;});
+        var canvas=document.createElement("canvas");canvas.width=1200;canvas.height=1200;
+        var ctx=canvas.getContext("2d");ctx.fillStyle="#fff";ctx.fillRect(0,0,1200,1200);ctx.drawImage(img,0,0,1200,1200);
+        blob=await new Promise(function(resolve){canvas.toBlob(resolve,"image/png");});
+        if(!blob)throw new Error("PNG生成に失敗しました");
+      } finally { URL.revokeObjectURL(src); }
+    }
+    var href=URL.createObjectURL(blob),a=document.createElement("a");a.href=href;a.download="qr-"+String(r.key||"store").replace(/[^a-z0-9-]/g,"")+"."+format;
+    document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(href);},60000);
+    toast("QR画像をダウンロードしました");
+  } catch(e) {toast("QRをダウンロードできませんでした。もう一度お試しください");}
+}
+
 function storeQr(id) {
   var w = window.open("about:blank");
   api("/api/store/qr?store_id=" + id).then(function (r) {
@@ -1951,6 +1976,8 @@ document.getElementById("main").addEventListener("click", function (e) {
   else if (act === "gbp_load") gbpLocationsLoad();
   else if (act === "gbp_onboard") storeOnboard();
   else if (act === "st_qr") storeQr(id);
+  else if (act === "st_qr_png") downloadStoreQr(id,"png");
+  else if (act === "st_qr_svg") downloadStoreQr(id,"svg");
   else if (act === "st_qrset") qrSetup();
   else if (act === "kw_add") kwAdd();
   else if (act === "ps_save") popSave();
