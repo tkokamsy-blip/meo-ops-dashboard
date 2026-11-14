@@ -1846,14 +1846,27 @@ function useInstagramTopics(monthly){
 }
 
 async function autoPostTopics(monthly){
- var storeEl=document.getElementById(monthly?'planStore':'netaStore'),field=document.getElementById(monthly?'planThemes':'netaText'),status=document.getElementById(monthly?'topicMonthStatus':'topicSingleStatus');
- if(field.value.trim()&&!confirm('入力済みのネタを自動提案で置き換えますか？'))return;
- var storeId=storeEl.value;status.textContent='店舗情報から提案中…';
+ var storeEl=document.getElementById(monthly?'planStore':'netaStore'),status=document.getElementById(monthly?'topicMonthStatus':'topicSingleStatus'),mode=monthly?'month':'single';
+ var storeId=storeEl.value;status.textContent='根拠と過去の投稿を確認中…';
+ state.postTopicCandidates=state.postTopicCandidates||{};delete state.postTopicCandidates[mode];
  try{var response=await fetch(SUPA_ORIGIN+'/functions/v1/post-topics?store_id='+encodeURIComponent(storeId),{headers:{apikey:ANON_KEY,Authorization:'Bearer '+token()}});var r=await response.json();if(storeEl.value!==storeId)return;
- if(!r.ok){status.textContent=r.message||'提案できませんでした: '+apiWhy(r);return;}
- var selected=(r.topics||[]).slice(0,monthly?8:1);field.value=selected.map(function(t){return t.theme;}).join(NL);
- status.textContent=selected.length+'件を提案しました。根拠：店舗の登録プロフィール。'+(r.dataGaps||[]).join(' ')+'内容確認後に下書きを作成してください。自動公開はしません。';
+ if(!response.ok||!r.ok){status.textContent=r.message||'提案できませんでした: '+apiWhy(r);return;}
+ var topics=r.topics||[];state.postTopicCandidates[mode]={storeId:storeId,topics:topics};
+ var html='<p>'+esc((r.dataGaps||[]).join(' '))+'</p>';
+ topics.forEach(function(t,i){html+='<div class="card"><label><input type="checkbox" id="topic-pick-'+mode+'-'+i+'">'+esc(t.title)+'</label><p>'+esc(t.angle||'')+'</p><p class="meta">根拠：'+esc(t.evidence)+'</p></div>';});
+ if(topics.length)html+='<button data-act="'+(monthly?'topic_use_month':'topic_use_single')+'">選んだ提案をネタ欄へ反映</button><p class="meta">選択・内容確認後に下書きを作成してください。予約・公開はされません。</p>';
+ else html+='<p>既存の下書きを確認するか、具体的な店舗情報を追加してください。同じ内容の作り直しは自動で行いません。</p>';
+ status.innerHTML=html;
  }catch(e){status.textContent='提案を取得できませんでした。もう一度お試しください。';}
+}
+function usePostTopics(monthly){
+ var mode=monthly?'month':'single',data=(state.postTopicCandidates||{})[mode],sid=document.getElementById(monthly?'planStore':'netaStore').value;
+ if(!data||data.storeId!==sid){toast('店舗が変わりました。提案を再取得してください');return;}
+ var selected=data.topics.filter(function(t,i){return document.getElementById('topic-pick-'+mode+'-'+i).checked;});
+ if(!selected.length||selected.length>(monthly?8:1)){toast(monthly?'1〜8件を選んでください':'1件を選んでください');return;}
+ var field=document.getElementById(monthly?'planThemes':'netaText');if(field.value.trim()&&!confirm('入力済みのネタを選んだ提案で置き換えますか？'))return;
+ field.value=selected.map(function(t){return t.theme}).join(NL);if(monthly)state.postPlanRequestId=null;
+ toast('選んだ提案を反映しました。内容を確認して下書きを作成してください。');
 }
 function createNeta() {
   var storeId = document.getElementById("netaStore").value;
@@ -2050,6 +2063,8 @@ document.getElementById("main").addEventListener("click", function (e) {
   else if (act === "s_create") storeCreate();
   else if (act === "gbp_load") gbpLocationsLoad();
   else if (act === "gbp_onboard") storeOnboard();
+  else if (act === "topic_use_single") usePostTopics(false);
+  else if (act === "topic_use_month") usePostTopics(true);
   else if (act === "instagram_manual_prepare") prepareManualInstagram();
   else if (act === "instagram_manual_single") useManualInstagram(false);
   else if (act === "instagram_manual_month") useManualInstagram(true);
