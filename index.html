@@ -697,7 +697,7 @@ function renderPosts() {
   });
   html += "</select></div>" +
     '<div class="bar"><label>公開予定日（任意）<input id="netaDay" type="date"></label><span class="meta">未指定なら本日を基準に生成します。日付指定だけでは予約されません。</span></div>' +
-    '<textarea id="netaText" placeholder="例: 新作レモンサワー始めました。柑橘は瀬戸内産。"></textarea>' +
+    '<button data-act="topic_single">店舗情報からネタを自動提案</button><p id="topicSingleStatus" role="status"></p><textarea id="netaText" placeholder="例: 新作レモンサワー始めました。柑橘は瀬戸内産。"></textarea>' +
     '<div class="actions"><button class="primary" data-act="neta">投稿案を生成</button></div></div>';
 
   html += '<div class="card"><div class="head"><span class="store">1か月分をまとめて準備</span><span class="badge post">週2回</span></div>' +
@@ -707,7 +707,7 @@ function renderPosts() {
   html += '</select><input id="planStart" type="date" value="'+japanDateValue(1)+'" style="max-width:160px"><input id="planTime" type="time" value="11:00" style="max-width:120px"></div>' +
     '<div class="bar"><label>1回目<select id="planDay1"><option value="1">月曜</option><option value="2" selected>火曜</option><option value="3">水曜</option><option value="4">木曜</option><option value="5">金曜</option><option value="6">土曜</option><option value="0">日曜</option></select></label>' +
     '<label>2回目<select id="planDay2"><option value="1">月曜</option><option value="2">火曜</option><option value="3">水曜</option><option value="4">木曜</option><option value="5" selected>金曜</option><option value="6">土曜</option><option value="0">日曜</option></select></label></div>' +
-    '<textarea id="planThemes" rows="8" placeholder="1行目：今月のおすすめ商品と確認済みの特徴&#10;2行目：初来店の方向けの利用方法&#10;3行目：営業時間のお知らせ&#10;事実として確認できるネタだけを入力"></textarea>' +
+    '<button data-act="topic_month">1か月分のネタを自動提案（最大8本）</button><p id="topicMonthStatus" role="status"></p><textarea id="planThemes" rows="8" placeholder="1行目：今月のおすすめ商品と確認済みの特徴&#10;2行目：初来店の方向けの利用方法&#10;3行目：営業時間のお知らせ&#10;事実として確認できるネタだけを入力"></textarea>' +
     '<div class="actions"><button class="primary" data-act="month_plan">下書きをまとめて作成</button></div>' +
     '<p class="meta">下書き作成だけでは公開されません。'+(state.availability.scheduledPublishing?'予約公開ジョブは有効です。':'予約枠は作成できますが、自動公開ジョブは現在停止中です。')+'</p></div>';
 
@@ -1783,6 +1783,16 @@ function handledNH(id) {
   api("/api/review/handled", { method: "POST", body: JSON.stringify({ review_id: id }) })
     .then(function () { toast("対応済みにしました"); load(); });
 }
+async function autoPostTopics(monthly){
+ var storeEl=document.getElementById(monthly?'planStore':'netaStore'),field=document.getElementById(monthly?'planThemes':'netaText'),status=document.getElementById(monthly?'topicMonthStatus':'topicSingleStatus');
+ if(field.value.trim()&&!confirm('入力済みのネタを自動提案で置き換えますか？'))return;
+ var storeId=storeEl.value;status.textContent='店舗情報から提案中…';
+ try{var r=await api('/api/post/topics?store_id='+encodeURIComponent(storeId));if(storeEl.value!==storeId)return;
+ if(!r.ok){status.textContent=r.message||'提案できませんでした: '+apiWhy(r);return;}
+ var selected=(r.topics||[]).slice(0,monthly?8:1);field.value=selected.map(function(t){return t.theme;}).join(NL);
+ status.textContent=selected.length+'件を提案しました。根拠：店舗の登録プロフィール。'+(r.dataGaps||[]).join(' ')+'内容確認後に下書きを作成してください。自動公開はしません。';
+ }catch(e){status.textContent='提案を取得できませんでした。もう一度お試しください。';}
+}
 function createNeta() {
   var storeId = document.getElementById("netaStore").value;
   var theme = document.getElementById("netaText").value.trim();
@@ -1978,6 +1988,8 @@ document.getElementById("main").addEventListener("click", function (e) {
   else if (act === "s_create") storeCreate();
   else if (act === "gbp_load") gbpLocationsLoad();
   else if (act === "gbp_onboard") storeOnboard();
+  else if (act === "topic_single") autoPostTopics(false);
+  else if (act === "topic_month") autoPostTopics(true);
   else if (act === "st_qr") storeQr(id);
   else if (act === "st_qr_png") downloadStoreQr(id,"png");
   else if (act === "st_qr_svg") downloadStoreQr(id,"svg");
