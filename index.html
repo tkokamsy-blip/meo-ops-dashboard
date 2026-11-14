@@ -157,6 +157,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="instagram-manual.js"></script>
 <script>
 var ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJqdGJnemx4eHdqbG9mbndpZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2OTI0NjksImV4cCI6MjEwNjI2ODQ2OX0.Vmd8oIKjWtQSaEQ_RmiKDryZYCYbn6NY6FMB2OWLdOI";
 var SUPA_ORIGIN = "https://bjtbgzlxxwjlofnwieuo.supabase.co";
@@ -711,6 +712,7 @@ function renderPosts() {
     '<div class="actions"><button class="primary" data-act="month_plan">下書きをまとめて作成</button></div>' +
     '<p class="meta">下書き作成だけでは公開されません。'+(state.availability.scheduledPublishing?'予約公開ジョブは有効です。':'予約枠は作成できますが、自動公開ジョブは現在停止中です。')+'</p></div>';
 
+  html+=renderManualInstagram();
   if(state.postHistory)html='';
   html+='<div class="bar"><button data-act="post_current" aria-pressed="'+(!state.postHistory)+'">通常の投稿</button><button data-act="post_history" aria-pressed="'+!!state.postHistory+'">取り消し履歴</button></div>';
   if(state.postHistory)html+='<p class="meta">取り消した投稿案の履歴です。Googleへの公開・予約はできません。</p>';
@@ -1783,6 +1785,35 @@ function handledNH(id) {
   api("/api/review/handled", { method: "POST", body: JSON.stringify({ review_id: id }) })
     .then(function () { toast("対応済みにしました"); load(); });
 }
+function renderManualInstagram(){
+ var sid=storeF(),html='<div class="card"><h3>Instagram投稿を手動で取り込む</h3><p class="meta">API接続なしで利用できます。公式投稿を開き、URLと本文を貼り付けるとネタ候補を抽出します。取得・予約・公開を自動実行する機能ではありません。</p><label>対象店舗<select id="igManualStore">';
+ state.stores.forEach(function(s){html+='<option value="'+s.id+'" '+(sid===s.id?'selected':'')+'>'+esc(s.name)+'</option>';});
+ return html+'</select></label><label>投稿元のユーザー名（@なし）<input id="igManualOwner" placeholder="tobari.shisha"></label><label>元投稿URL<input id="igManualUrl" type="url" placeholder="https://www.instagram.com/p/..."></label><label>元投稿の日付（不明なら空欄）<input id="igManualDate" type="date"></label><label>元投稿の本文<textarea id="igManualCaption" rows="6" maxlength="5000" placeholder="Instagramの本文をそのまま貼り付けてください"></textarea></label><label><input id="igManualOwnerCheck" type="checkbox">選択した店舗の公式アカウントの投稿です</label><button data-act="instagram_manual_prepare">本文からネタ候補を抽出</button><div id="igManualCandidates" role="status"></div></div>';
+}
+function prepareManualInstagram(){
+ try{
+ var src=InstagramManual.prepare({storeId:document.getElementById('igManualStore').value,owner:document.getElementById('igManualOwner').value.trim().replace(/^@/,''),url:document.getElementById('igManualUrl').value.trim(),publishedDate:document.getElementById('igManualDate').value,caption:document.getElementById('igManualCaption').value,confirmOwner:document.getElementById('igManualOwnerCheck').checked},state.posts);
+ var expected={'589758d1-e59b-43e1-b2b2-e0f19d5b99e6':'tobari.shisha','2dacad07-0dd1-4746-9b8e-41c37d130806':'doterror.shisha'}[src.storeId];if(expected&&src.owner.toLowerCase()!==expected)throw Error('対象店舗と投稿元アカウントが一致しません');
+ state.igManualSource=src;state.igManualRaw=JSON.stringify(['igManualStore','igManualOwner','igManualUrl','igManualDate','igManualCaption'].map(function(id){return document.getElementById(id).value}));var html='<p class="meta">'+esc(src.warnings.join(' '))+'</p><p>候補を選び、現在も有効な事実だけに編集してください。同じ元投稿からは1件ずつ使うことをおすすめします。</p>';
+ src.topics.forEach(function(t,i){html+='<label><input type="checkbox" id="igManualPick-'+i+'">使う</label><input maxlength="180" id="igManualFact-'+i+'" value="'+esc(t)+'">';});
+ html+='<label>候補に適した文章がない場合：確認した事実を1件入力<input id="igManualCustom" maxlength="180"></label><label><input type="checkbox" id="igManualValidity">公開予定日に有効な内容か確認しました。未確認事項は下書きの公開前に店舗へ確認します</label><button data-act="instagram_manual_single">選んだネタを1本の下書き作成欄へ</button><button data-act="instagram_manual_month">選んだネタを月次の下書き作成欄へ</button>';
+ document.getElementById('igManualCandidates').innerHTML=html;
+ }catch(e){state.igManualSource=null;document.getElementById('igManualCandidates').textContent=e.message;}
+}
+function useManualInstagram(monthly){
+ try{var src=state.igManualSource;
+ if(!src||src.storeId!==document.getElementById('igManualStore').value||src.owner!==document.getElementById('igManualOwner').value.trim().replace(/^@/,''))throw Error('店舗や投稿元が変わりました。候補を再抽出してください');
+ if(!document.getElementById('igManualOwnerCheck').checked||state.igManualRaw!==JSON.stringify(['igManualStore','igManualOwner','igManualUrl','igManualDate','igManualCaption'].map(function(id){return document.getElementById(id).value})))throw Error('元投稿の入力が変わりました。候補を再抽出してください');
+ if(!document.getElementById('igManualValidity').checked)throw Error('公開予定日と内容の確認が必要です');
+ var facts=[];src.topics.forEach(function(t,i){if(document.getElementById('igManualPick-'+i).checked)facts.push(document.getElementById('igManualFact-'+i).value.trim());});var custom=document.getElementById('igManualCustom').value.trim();if(custom)facts.push(custom);
+ if(!facts.length||facts.length>(monthly?8:1))throw Error(monthly?'1〜8件を選んでください':'1件を選んでください');
+ if(new Set(facts).size!==facts.length)throw Error('同じネタが選択されています');
+ var field=document.getElementById(monthly?'planThemes':'netaText');if(field.value.trim()&&!confirm('入力中のネタを置き換えますか？'))return;
+ var themes=facts.map(function(f){return InstagramManual.theme(src,f)});document.getElementById(monthly?'planStore':'netaStore').value=src.storeId;field.value=themes.join(NL);if(monthly)state.postPlanRequestId=null;
+ toast('手動取り込みのネタを反映しました。内容確認後に下書きを作成してください。予約・公開はされません。');
+ }catch(e){toast(e.message);}
+}
+
 async function loadInstagramTopics(monthly){
  var sid=document.getElementById(monthly?'planStore':'netaStore').value,box=document.getElementById(monthly?'instagramMonthCandidates':'instagramSingleCandidates');
  box.textContent='Instagramの投稿を確認中…';
@@ -2019,6 +2050,9 @@ document.getElementById("main").addEventListener("click", function (e) {
   else if (act === "s_create") storeCreate();
   else if (act === "gbp_load") gbpLocationsLoad();
   else if (act === "gbp_onboard") storeOnboard();
+  else if (act === "instagram_manual_prepare") prepareManualInstagram();
+  else if (act === "instagram_manual_single") useManualInstagram(false);
+  else if (act === "instagram_manual_month") useManualInstagram(true);
   else if (act === "instagram_single") loadInstagramTopics(false);
   else if (act === "instagram_month") loadInstagramTopics(true);
   else if (act === "instagram_use_single") useInstagramTopics(false);
