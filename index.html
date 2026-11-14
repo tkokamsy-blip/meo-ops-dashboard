@@ -1787,7 +1787,7 @@ async function autoPostTopics(monthly){
  var storeEl=document.getElementById(monthly?'planStore':'netaStore'),field=document.getElementById(monthly?'planThemes':'netaText'),status=document.getElementById(monthly?'topicMonthStatus':'topicSingleStatus');
  if(field.value.trim()&&!confirm('入力済みのネタを自動提案で置き換えますか？'))return;
  var storeId=storeEl.value;status.textContent='店舗情報から提案中…';
- try{var r=await api('/api/post/topics?store_id='+encodeURIComponent(storeId));if(storeEl.value!==storeId)return;
+ try{var response=await fetch(SUPA_ORIGIN+'/functions/v1/post-topics?store_id='+encodeURIComponent(storeId),{headers:{apikey:ANON_KEY,Authorization:'Bearer '+token()}});var r=await response.json();if(storeEl.value!==storeId)return;
  if(!r.ok){status.textContent=r.message||'提案できませんでした: '+apiWhy(r);return;}
  var selected=(r.topics||[]).slice(0,monthly?8:1);field.value=selected.map(function(t){return t.theme;}).join(NL);
  status.textContent=selected.length+'件を提案しました。根拠：店舗の登録プロフィール。'+(r.dataGaps||[]).join(' ')+'内容確認後に下書きを作成してください。自動公開はしません。';
