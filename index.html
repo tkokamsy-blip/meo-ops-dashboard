@@ -1791,7 +1791,7 @@ async function loadInstagramTopics(monthly){
   if(document.getElementById(monthly?'planStore':'netaStore').value!==sid){box.textContent='店舗が変更されました。もう一度取得してください。';return;}
   if(!response.ok||!r.ok){box.textContent=r.message||({INSTAGRAM_NOT_CONNECTED:'Instagramの連携設定が必要です。',INSTAGRAM_REAUTH_REQUIRED:'Instagramの再接続が必要です。',INSTAGRAM_RATE_LIMIT:'Instagramの利用制限中です。時間をおいてお試しください。',INSTAGRAM_ACCOUNT_MISMATCH:'店舗とInstagramの対応を確認してください。'})[r.reason]||'Instagramの取得を確認できませんでした。管理者へご連絡ください。';return;}
   state.instagramTopics=state.instagramTopics||{};state.instagramTopics[monthly?'month':'single']={storeId:sid,topics:r.topics};
-  var html='<p class="meta">直近90日・最大25投稿から候補を選んでいます。取得情報は未確認です。本文と元投稿を確認し、現在も有効な情報だけを選んでください。写真は転載しません。</p>';
+  var html='<p class="meta">直近90日・最大25投稿から候補を選んでいます。取得情報は未確認です。本文と元投稿を確認し、300文字以内に整理して現在も有効な情報だけを選んでください。写真は転載しません。</p>';
   r.topics.forEach(function(t,i){var key=(monthly?'month':'single')+'-'+i;
    html+='<div class="card"><label><input type="checkbox" id="ig-pick-'+key+'">この情報を使う</label><p><a target="_blank" rel="noopener noreferrer" href="'+esc(t.sourceUrl)+'">Instagramの元投稿を確認</a> ／ '+esc(t.publishedAt.slice(0,10))+'</p><textarea maxlength="300" id="ig-text-'+key+'">'+esc(t.caption)+'</textarea><p class="meta">'+esc(t.warnings.join(' '))+'</p></div>';
   });
