@@ -698,7 +698,7 @@ function renderPosts() {
   });
   html += "</select></div>" +
     '<div class="bar"><label>公開予定日（任意）<input id="netaDay" type="date"></label><span class="meta">未指定なら本日を基準に生成します。日付指定だけでは予約されません。</span></div>' +
-    '<button data-act="topic_single">店舗情報からネタを自動提案</button><button data-act="instagram_single">Instagramからネタを探す</button><div id="instagramSingleCandidates"></div><p id="topicSingleStatus" role="status"></p><textarea id="netaText" placeholder="例: 新作レモンサワー始めました。柑橘は瀬戸内産。"></textarea>' +
+    '<button data-act="topic_single">店舗情報からネタを自動提案</button><button data-act="instagram_single">Instagramからネタを探す</button><div id="instagramSingleCandidates"></div><div id="topicSingleStatus" role="status"></div><textarea id="netaText" placeholder="例: 新作レモンサワー始めました。柑橘は瀬戸内産。"></textarea>' +
     '<div class="actions"><button class="primary" data-act="neta">投稿案を生成</button></div></div>';
 
   html += '<div class="card"><div class="head"><span class="store">1か月分をまとめて準備</span><span class="badge post">週2回</span></div>' +
@@ -708,7 +708,7 @@ function renderPosts() {
   html += '</select><input id="planStart" type="date" value="'+japanDateValue(1)+'" style="max-width:160px"><input id="planTime" type="time" value="11:00" style="max-width:120px"></div>' +
     '<div class="bar"><label>1回目<select id="planDay1"><option value="1">月曜</option><option value="2" selected>火曜</option><option value="3">水曜</option><option value="4">木曜</option><option value="5">金曜</option><option value="6">土曜</option><option value="0">日曜</option></select></label>' +
     '<label>2回目<select id="planDay2"><option value="1">月曜</option><option value="2">火曜</option><option value="3">水曜</option><option value="4">木曜</option><option value="5" selected>金曜</option><option value="6">土曜</option><option value="0">日曜</option></select></label></div>' +
-    '<button data-act="topic_month">1か月分のネタを自動提案（最大8本）</button><button data-act="instagram_month">Instagramから最大8件を選ぶ</button><div id="instagramMonthCandidates"></div><p id="topicMonthStatus" role="status"></p><textarea id="planThemes" rows="8" placeholder="1行目：今月のおすすめ商品と確認済みの特徴&#10;2行目：初来店の方向けの利用方法&#10;3行目：営業時間のお知らせ&#10;事実として確認できるネタだけを入力"></textarea>' +
+    '<button data-act="topic_month">1か月分のネタを自動提案（最大8本）</button><button data-act="instagram_month">Instagramから最大8件を選ぶ</button><div id="instagramMonthCandidates"></div><div id="topicMonthStatus" role="status"></div><textarea id="planThemes" rows="8" placeholder="1行目：今月のおすすめ商品と確認済みの特徴&#10;2行目：初来店の方向けの利用方法&#10;3行目：営業時間のお知らせ&#10;事実として確認できるネタだけを入力"></textarea>' +
     '<div class="actions"><button class="primary" data-act="month_plan">下書きをまとめて作成</button></div>' +
     '<p class="meta">下書き作成だけでは公開されません。'+(state.availability.scheduledPublishing?'予約公開ジョブは有効です。':'予約枠は作成できますが、自動公開ジョブは現在停止中です。')+'</p></div>';
 
